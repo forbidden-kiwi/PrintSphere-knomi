@@ -35,7 +35,9 @@ extern const lv_image_dsc_t bambuicon_small;
 extern const lv_font_t dosis_20;
 extern const lv_font_t dosis_32;
 extern const lv_font_t dosis_40;
-extern const lv_font_t lv_font_montserrat_20;
+extern const lv_font_t montserrat_12;
+extern const lv_font_t montserrat_14;
+extern const lv_font_t montserrat_20;
 extern const lv_font_t mdi_30;
 extern const lv_font_t mdi_40;
 }
@@ -1190,9 +1192,6 @@ std::string layer_text(const PrinterSnapshot& snapshot) {
 // Format the slicer filament weight estimate as a compact "14g" / "1.45kg"
 // string. Returned empty when no estimate is available so the caller can
 // hide the dedicated icon + value labels in the layer row.
-// NOTE: The tilde '~' character is intentionally omitted — the embedded
-// dosis_32 font does not include U+007E (tilde) so it would render as a
-// blank tofu rectangle.
 std::string filament_estimate_text(const PrinterSnapshot& snapshot) {
   if (snapshot.estimated_filament_weight_g <= 0.0f) {
     return {};
@@ -1804,7 +1803,7 @@ void Ui::rebuild_printer_cards_locked(const std::vector<PrinterCardInfo>& cards)
   }
 
   const lv_font_t* font_name = &dosis_20;
-  const lv_font_t* font_detail = &lv_font_montserrat_14;
+  const lv_font_t* font_detail = &montserrat_14;
 
   int card_idx = 0;
   for (const auto& info : cards) {
@@ -2467,11 +2466,11 @@ void Ui::apply_snapshot_locked(const PrinterSnapshot& snapshot, bool force_ring_
         has_camera_image && (snapshot.total_layers > 0 || snapshot.current_layer > 0);
 #if defined(PRINTSPHERE_HW_VARIANT_KNOMI_V2)
     lv_obj_set_style_text_font(page3_subnote_,
-                               subnote_is_layer ? &lv_font_montserrat_14 : &lv_font_montserrat_12,
+                               subnote_is_layer ? &montserrat_14 : &montserrat_12,
                                0);
 #else
     lv_obj_set_style_text_font(page3_subnote_,
-                               subnote_is_layer ? &dosis_32 : &lv_font_montserrat_20, 0);
+                               subnote_is_layer ? &dosis_32 : &montserrat_20, 0);
 #endif
     set_label_text_if_changed(page3_subnote_, camera_subnote);
   }
@@ -2625,7 +2624,7 @@ void Ui::build_ams_page(int unit_idx) {
     lv_label_set_long_mode(ams_tray_type_[unit_idx][i], LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(ams_tray_type_[unit_idx][i], LV_TEXT_ALIGN_CENTER, 0);
 #if defined(PRINTSPHERE_HW_VARIANT_KNOMI_V2)
-    lv_obj_set_style_text_font(ams_tray_type_[unit_idx][i], &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(ams_tray_type_[unit_idx][i], &montserrat_12, 0);
 #else
     lv_obj_set_style_text_font(ams_tray_type_[unit_idx][i], &dosis_20, 0);
 #endif
@@ -2660,9 +2659,9 @@ void Ui::build_ams_page(int unit_idx) {
     ams_tray_pct_[unit_idx][i] = lv_label_create(page);
     set_label_text_if_changed(ams_tray_pct_[unit_idx][i], "");
 #if defined(PRINTSPHERE_HW_VARIANT_KNOMI_V2)
-    lv_obj_set_style_text_font(ams_tray_pct_[unit_idx][i], &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(ams_tray_pct_[unit_idx][i], &montserrat_12, 0);
 #else
-    lv_obj_set_style_text_font(ams_tray_pct_[unit_idx][i], &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(ams_tray_pct_[unit_idx][i], &montserrat_20, 0);
 #endif
     lv_obj_set_style_text_color(ams_tray_pct_[unit_idx][i], lv_color_hex(0xFFFFFF), 0);
     lv_obj_add_flag(ams_tray_pct_[unit_idx][i], LV_OBJ_FLAG_HIDDEN);
@@ -2714,7 +2713,7 @@ void Ui::build_ams_page(int unit_idx) {
   ams_humidity_label_[unit_idx] = lv_label_create(hum_pill);
   set_label_text_if_changed(ams_humidity_label_[unit_idx], "--");
   #if defined(PRINTSPHERE_HW_VARIANT_KNOMI_V2)
-  lv_obj_set_style_text_font(ams_humidity_label_[unit_idx], &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_font(ams_humidity_label_[unit_idx], &montserrat_12, 0);
 #else
   lv_obj_set_style_text_font(ams_humidity_label_[unit_idx], &dosis_20, 0);
 #endif
@@ -2724,7 +2723,7 @@ void Ui::build_ams_page(int unit_idx) {
   ams_temp_label_[unit_idx] = lv_label_create(hum_pill);
   set_label_text_if_changed(ams_temp_label_[unit_idx], "--\xC2\xB0""C");
   #if defined(PRINTSPHERE_HW_VARIANT_KNOMI_V2)
-  lv_obj_set_style_text_font(ams_temp_label_[unit_idx], &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_font(ams_temp_label_[unit_idx], &montserrat_12, 0);
 #else
   lv_obj_set_style_text_font(ams_temp_label_[unit_idx], &dosis_20, 0);
 #endif
@@ -2765,9 +2764,9 @@ void Ui::build_ams_page(int unit_idx) {
     lv_label_set_long_mode(ams_ext_type_, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(ams_ext_type_, LV_TEXT_ALIGN_CENTER, 0);
 #if defined(PRINTSPHERE_HW_VARIANT_KNOMI_V2)
-    lv_obj_set_style_text_font(ams_ext_type_, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(ams_ext_type_, &montserrat_12, 0);
 #else
-    lv_obj_set_style_text_font(ams_ext_type_, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(ams_ext_type_, &montserrat_20, 0);
 #endif
     lv_obj_set_style_text_color(ams_ext_type_, lv_color_hex(0xFFFFFF), 0);
     lv_obj_align(ams_ext_type_, LV_ALIGN_CENTER, 0, 8);
@@ -2778,9 +2777,9 @@ void Ui::build_ams_page(int unit_idx) {
     lv_label_set_long_mode(ams_ext_mat_, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(ams_ext_mat_, LV_TEXT_ALIGN_CENTER, 0);
 #if defined(PRINTSPHERE_HW_VARIANT_KNOMI_V2)
-    lv_obj_set_style_text_font(ams_ext_mat_, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(ams_ext_mat_, &montserrat_12, 0);
 #else
-    lv_obj_set_style_text_font(ams_ext_mat_, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(ams_ext_mat_, &montserrat_14, 0);
 #endif
     lv_obj_set_style_text_color(ams_ext_mat_, lv_color_hex(0xFFFFFF), 0);
     lv_obj_align(ams_ext_mat_, LV_ALIGN_TOP_MID, 0, 12);
@@ -2802,7 +2801,7 @@ void Ui::build_ams_page(int unit_idx) {
   lv_label_set_long_mode(ams_note_[unit_idx], LV_LABEL_LONG_WRAP);
   lv_obj_set_style_text_align(ams_note_[unit_idx], LV_TEXT_ALIGN_CENTER, 0);
 #if defined(PRINTSPHERE_HW_VARIANT_KNOMI_V2)
-  lv_obj_set_style_text_font(ams_note_[unit_idx], &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_font(ams_note_[unit_idx], &montserrat_12, 0);
 #else
   lv_obj_set_style_text_font(ams_note_[unit_idx], &dosis_20, 0);
 #endif
@@ -3071,17 +3070,17 @@ esp_err_t Ui::build_dashboard() {
 #if defined(PRINTSPHERE_HW_VARIANT_KNOMI_V2)
   // One step smaller than before: Montserrat 14 for body, 12 for detail/aux.
   // Keep mdi_40: mdi_30 only embeds battery glyphs, not nozzle/bed/clock.
-  const lv_font_t* dosis20 = &lv_font_montserrat_12;
-  const lv_font_t* dosis32 = &lv_font_montserrat_14;
-  const lv_font_t* dosis40 = &lv_font_montserrat_14;
-  const lv_font_t* info20 = &lv_font_montserrat_12;
+  const lv_font_t* dosis20 = &montserrat_12;
+  const lv_font_t* dosis32 = &montserrat_14;
+  const lv_font_t* dosis40 = &montserrat_14;
+  const lv_font_t* info20 = &montserrat_12;
   const lv_font_t* mdi30 = &mdi_30;
   const lv_font_t* mdi40 = &mdi_40;
 #else
   const lv_font_t* dosis20 = &dosis_20;
   const lv_font_t* dosis32 = &dosis_32;
   const lv_font_t* dosis40 = &dosis_40;
-  const lv_font_t* info20 = &lv_font_montserrat_20;
+  const lv_font_t* info20 = &montserrat_20;
   const lv_font_t* mdi30 = &mdi_30;
   const lv_font_t* mdi40 = &mdi_40;
 #endif
