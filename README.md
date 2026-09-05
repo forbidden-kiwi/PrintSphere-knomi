@@ -8,7 +8,7 @@ Works with **Bambu Cloud**, the printer’s **local** connection, or both. Home 
 > This repository is a derivative under the [Federation Non-Commercial License (FNCL) v1.1](LICENSE).  
 > See [NOTICE.md](NOTICE.md) for attribution and a summary of changes (notably **BigTreeTech Knomi v2** support).
 
-Latest packaged line: **v1.6.2** (+ Knomi v2 variant)
+Latest packaged line: **v1.6.3** (+ Knomi v2 variant)
 
 ## Supported hardware
 

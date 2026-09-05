@@ -4,7 +4,7 @@ Build and package with:
 
 ```powershell
 idf.py -B build-knomi_v2 -DPRINTSPHERE_HW_VARIANT=knomi_v2 reconfigure build
-python tools/package_initial_flash.py --build-dir build-knomi_v2 --release-root release/knomi_v2 --version v1.6.2-knomi_v2
+python tools/package_initial_flash.py --build-dir build-knomi_v2 --release-root release/knomi_v2 --version v1.6.3-knomi_v2
 ```
 
 - `initial/printsphere_full.bin` — USB factory flash
