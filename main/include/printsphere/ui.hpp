@@ -292,6 +292,15 @@ class Ui {
   // Page the current swipe gesture started on; used for the page-advance
   // threshold decision when the finger is released (handle_pager_event).
   int scroll_origin_page_ = 0;
+  // Live finger-scroll samples for flick (velocity) page turns. Armed only
+  // while a finger is dragging so snap-animation SCROLL events cannot
+  // trigger a second page skip.
+  bool scroll_flick_armed_ = false;
+  int scroll_sample_x_ = 0;
+  uint32_t scroll_origin_tick_ = 0;
+  uint32_t scroll_sample_tick_ = 0;
+  int scroll_recent_dx_ = 0;
+  uint32_t scroll_recent_dt_ = 0;
   std::atomic<int> active_page_snapshot_{0};
   std::atomic<bool> page_scrolling_snapshot_{false};
   int last_parallax_clamped_ = -1;

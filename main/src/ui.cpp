@@ -153,6 +153,11 @@ constexpr int kAmsUnitLabelY = 40;
 constexpr int kAuxTempRowY = -8;
 constexpr int kSwipeThresholdPx = 14;
 constexpr int kGestureAxisLockMarginPx = 10;
+constexpr uint32_t kTouchReadPeriodMs = 8;
+constexpr uint32_t kPagerSnapAnimMs = 160;
+constexpr int kFlickMinDistancePx = 18;
+constexpr uint32_t kFlickMaxDurationMs = 240;
+constexpr int kFlickVelocityPxPerS = 500;
 constexpr int kBrightnessHorizontalTolerancePx = 12;
 constexpr int kRotatedVisualOffsetX = 0;
 constexpr int kRotatedVisualOffsetY = 0;
@@ -252,6 +257,11 @@ constexpr int kAmsUnitLabelY = 60;
 constexpr int kAuxTempRowY = 28;
 constexpr int kSwipeThresholdPx = 24;
 constexpr int kGestureAxisLockMarginPx = 16;
+constexpr uint32_t kTouchReadPeriodMs = 8;
+constexpr uint32_t kPagerSnapAnimMs = 160;
+constexpr int kFlickMinDistancePx = 28;
+constexpr uint32_t kFlickMaxDurationMs = 240;
+constexpr int kFlickVelocityPxPerS = 650;
 constexpr int kBrightnessHorizontalTolerancePx = 18;
 constexpr int kRotatedVisualOffsetX = 0;
 constexpr int kRotatedVisualOffsetY = 0;
@@ -1543,11 +1553,19 @@ esp_err_t Ui::initialize() {
   // (~30 ms). SCROLL_END fires almost immediately and handle_pager_event()
   // launches a single ease-out snap animation to the nearest page — no
   // competing LVGL snap animations.
+  //
+  // Fast flicks rarely cover the 20 % distance threshold because the touch
+  // controller only delivers a few points. Sample the pointer twice as often
+  // as the default refresh period so short, quick swipes still produce a
+  // usable velocity for the flick detector in handle_pager_event().
   {
     lv_indev_t* indev = lv_indev_get_next(nullptr);
     while (indev != nullptr) {
       if (lv_indev_get_type(indev) == LV_INDEV_TYPE_POINTER) {
         lv_indev_set_scroll_throw(indev, 90);
+        if (lv_timer_t* read_timer = lv_indev_get_read_timer(indev); read_timer != nullptr) {
+          lv_timer_set_period(read_timer, kTouchReadPeriodMs);
+        }
         break;
       }
       indev = lv_indev_get_next(indev);
@@ -3100,6 +3118,7 @@ esp_err_t Ui::build_dashboard() {
   // with our set_active_page() call, causing double-animation jitter and page-skip bugs.
   lv_obj_set_scroll_snap_x(pager_, LV_SCROLL_SNAP_NONE);
   lv_obj_set_scrollbar_mode(pager_, LV_SCROLLBAR_MODE_OFF);
+  lv_obj_set_style_anim_duration(pager_, kPagerSnapAnimMs, 0);
   lv_obj_add_event_cb(pager_, &Ui::pager_event_cb, LV_EVENT_ALL, this);
 
   auto create_page = [](lv_obj_t* parent) {
@@ -3964,6 +3983,16 @@ void Ui::handle_pager_event(lv_event_t* event) {
   }
 
   if (code == LV_EVENT_SCROLL) {
+    if (scroll_flick_armed_) {
+      const int scroll_x = std::abs(lv_obj_get_scroll_x(pager_));
+      const uint32_t now = lv_tick_get();
+      if (now != scroll_sample_tick_) {
+        scroll_recent_dx_ = scroll_x - scroll_sample_x_;
+        scroll_recent_dt_ = now - scroll_sample_tick_;
+      }
+      scroll_sample_x_ = scroll_x;
+      scroll_sample_tick_ = now;
+    }
     apply_page0_parallax();
     return;
   }
@@ -3980,6 +4009,12 @@ void Ui::handle_pager_event(lv_event_t* event) {
     if (lv_indev_t* begin_indev = lv_indev_active();
         begin_indev != nullptr && lv_indev_get_state(begin_indev) == LV_INDEV_STATE_PRESSED) {
       scroll_origin_page_ = nearest_enabled_page_for_scroll();
+      scroll_flick_armed_ = true;
+      scroll_sample_x_ = std::abs(lv_obj_get_scroll_x(pager_));
+      scroll_origin_tick_ = lv_tick_get();
+      scroll_sample_tick_ = scroll_origin_tick_;
+      scroll_recent_dx_ = 0;
+      scroll_recent_dt_ = 0;
     }
     publish_page_state_snapshot();
 
@@ -4002,22 +4037,36 @@ void Ui::handle_pager_event(lv_event_t* event) {
 
   // Smartphone-style snap: instead of hard-jumping to the nearest page
   // (LV_ANIM_OFF), glide there with LVGL's built-in ease-out scroll animation
-  // (200-400 ms depending on distance). While the animation runs we keep
-  // scrolling_ == true so both pages stay visible; the animation fires a final
-  // SCROLL_END when it lands, which re-enters this handler with a zero delta
-  // and finalizes the page switch via set_active_page().
+  // (kPagerSnapAnimMs). While the animation runs we keep scrolling_ == true so
+  // both pages stay visible; the animation fires a final SCROLL_END when it
+  // lands, which re-enters this handler with a zero delta and finalizes the
+  // page switch via set_active_page().
   //
-  // Page-advance threshold: the nearest-page rule alone would snap BACK unless
-  // more than half the screen was dragged. Smartphone pagers advance once the
-  // drag passes ~20% of the width, so if the nearest page is still the gesture's
-  // origin page but the drag went past the threshold, advance one page in the
-  // drag direction instead.
+  // Page-advance: nearest-page alone snaps BACK unless more than half the
+  // screen was dragged. Advance on ~20 % distance, or on a short/fast flick
+  // that the ESP touch path often truncates to a small pixel delta.
+  const bool apply_flick = scroll_flick_armed_;
+  scroll_flick_armed_ = false;
   int snap_page = nearest_enabled_page_for_scroll();
   if (lv_obj_t* origin_obj = page_object(scroll_origin_page_);
       origin_obj != nullptr && snap_page == scroll_origin_page_) {
     const int delta = scroll_x - lv_obj_get_x(origin_obj);
     constexpr int kAdvanceThresholdPx = board::kDisplayWidth / 5;
-    if (std::abs(delta) >= kAdvanceThresholdPx) {
+    bool advance = std::abs(delta) >= kAdvanceThresholdPx;
+    if (!advance && apply_flick) {
+      const uint32_t duration_ms = lv_tick_elaps(scroll_origin_tick_);
+      const int flick_dt = static_cast<int>(scroll_recent_dt_ > 0 ? scroll_recent_dt_ : duration_ms);
+      const int flick_dx = scroll_recent_dt_ > 0 ? scroll_recent_dx_ : delta;
+      const int velocity_px_s =
+          (flick_dt > 0) ? (std::abs(flick_dx) * 1000) / flick_dt : 0;
+      const bool quick_flick =
+          duration_ms > 0 && duration_ms <= kFlickMaxDurationMs &&
+          std::abs(delta) >= kFlickMinDistancePx;
+      const bool fast_flick = velocity_px_s >= kFlickVelocityPxPerS &&
+                              std::abs(delta) >= kSwipeThresholdPx;
+      advance = quick_flick || fast_flick;
+    }
+    if (advance) {
       snap_page = next_enabled_page(scroll_origin_page_, delta > 0 ? 1 : -1);
     }
   }
