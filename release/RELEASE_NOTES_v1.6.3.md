@@ -22,6 +22,9 @@ change).
   short display names no longer splits a multi-byte character in the middle.
 - **Faster page flicks**: Short, quick swipes advance the pager even when the
   CST816S only reports a small pixel delta. Snap animation is shorter.
+- **Main-page swipes no longer stall on live status**: Finger-down defers MQTT
+  snapshot paints so the LVGL worker can keep reading touch. Knomi temp/clock
+  icon slots keep scroll chaining to the pager.
 
 ## Assets
 

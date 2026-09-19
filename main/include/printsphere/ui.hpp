@@ -121,6 +121,7 @@ class Ui {
   lv_obj_t* page_object(int page) const;
   void handle_pager_event(lv_event_t* event);
   void handle_screen_event(lv_event_t* event);
+  void flush_deferred_snapshot_if_idle_locked();
   void handle_logo_event(lv_event_t* event);
   void update_portal_access_visuals_locked();
   void compute_portal_texts_locked();
@@ -301,6 +302,8 @@ class Ui {
   uint32_t scroll_sample_tick_ = 0;
   int scroll_recent_dx_ = 0;
   uint32_t scroll_recent_dt_ = 0;
+  // Finger is down: MQTT/status must not steal the LVGL lock from touch.
+  std::atomic<bool> pointer_down_{false};
   std::atomic<int> active_page_snapshot_{0};
   std::atomic<bool> page_scrolling_snapshot_{false};
   int last_parallax_clamped_ = -1;
