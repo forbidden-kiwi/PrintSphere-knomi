@@ -15,6 +15,9 @@ change).
 - **German umlauts render on the Knomi UI**: The compact Montserrat 12/14
   fonts used on Knomi v2 now include `Ä Ö Ü ß ä ö ü` plus printable ASCII
   and the degree sign, so job names and printer names no longer show tofu.
+- **Latin-1, Euro and Latin Extended-A**: The same fonts now cover `€ µ Ø × ± ² ³`,
+  en-dash, typographic quotes, and Central/Eastern European letters
+  (`ł ě ă ő ą`, …).
 - **UTF-8 strings stay intact**: Truncating job names, status labels and
   short display names no longer splits a multi-byte character in the middle.
 
