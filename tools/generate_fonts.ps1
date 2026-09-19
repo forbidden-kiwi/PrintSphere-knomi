@@ -1,5 +1,6 @@
-# Regenerates LVGL Dosis/Montserrat C fonts with ASCII punctuation and German
-# umlauts (Ä Ö Ü ß ä ö ü) plus the degree sign.
+# Regenerates LVGL Dosis/Montserrat C fonts with ASCII punctuation, German
+# umlauts (Ä Ö Ü ß ä ö ü), degree sign, en/em dashes, typographic quotes
+# and ellipsis.
 # Requires: Node.js (npx lv_font_conv), Python 3 with fonttools.
 
 $ErrorActionPreference = "Stop"
@@ -22,7 +23,7 @@ font = TTFont('Dosis-variable.ttf')
 instancer.instantiateVariableFont(font, {'wght': 400}).save('Dosis-Regular.ttf')
 "@
 
-$range = "0x20-0x7E,0xB0,0xC4,0xD6,0xDC,0xDF,0xE4,0xF6,0xFC"
+$range = "0x20-0x7E,0xB0,0xC4,0xD6,0xDC,0xDF,0xE4,0xF6,0xFC,0x2013,0x2014,0x2018-0x201A,0x201C-0x201E,0x2026"
 $outDir = Join-Path $root "main\include\font"
 
 function Convert-LvFont([string]$Font, [int]$Size, [string]$Name) {
