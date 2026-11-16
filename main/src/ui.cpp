@@ -98,7 +98,7 @@ constexpr int kLayerY = 40;
 constexpr int kRemainingRowY = 85;
 // Keep detail above the round-panel clip zone (center+102 was unreadable).
 constexpr int kDetailY = 58;
-// AP / MQTT / portal link copy uses the layer band until the printer is online.
+// AP / MQTT copy uses the layer band until printer metrics are live.
 constexpr int kDetailSetupY = 40;
 constexpr int kBadgeSize = 44;
 constexpr int kLogoBadgeSize = 52;
@@ -588,6 +588,20 @@ void enable_touch_bubble(lv_obj_t* obj) {
   }
   lv_obj_add_flag(obj, LV_OBJ_FLAG_EVENT_BUBBLE);
   lv_obj_add_flag(obj, LV_OBJ_FLAG_GESTURE_BUBBLE);
+}
+
+// Decorative widgets must not swallow the pager's horizontal swipe. Keep
+// CLICKABLE only for real tap targets (logo light, remaining-time toggle).
+void pass_pager_swipe(lv_obj_t* obj, bool keep_clickable = false) {
+  if (obj == nullptr) {
+    return;
+  }
+  enable_touch_bubble(obj);
+  lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLL_CHAIN_HOR);
+  lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+  if (!keep_clickable) {
+    lv_obj_clear_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+  }
 }
 
 // Draw callback for the green/red triangle slot indicator.
@@ -1084,12 +1098,34 @@ uint32_t stable_status_text_hex(const PrinterSnapshot& snapshot, const ArcColorS
 // ring_visual_is_animated() removed — animation state is now tracked
 // via active_ring_anim_kind_ in apply_ring_visual_locked().
 
+// True while MQTT/cloud is still handshaking. Hybrid H2C can be kOnline from
+// the cloud path while local MQTT still reports "Connecting to local…".
+bool is_link_handshake(const PrinterSnapshot& snapshot) {
+  if (snapshot.connection != PrinterConnectionState::kOnline) {
+    return true;
+  }
+  if (snapshot.stage == "mqtt" || snapshot.stage == "cloud" || snapshot.stage == "setup") {
+    return true;
+  }
+  return snapshot.detail.find("Connecting to local") != std::string::npos;
+}
+
+// Layer / remaining / job metrics only belong on screen after the handshake.
+bool printer_link_ready(const PrinterSnapshot& snapshot) {
+  return snapshot.connection == PrinterConnectionState::kOnline && !is_link_handshake(snapshot);
+}
+
 std::string lifecycle_label(const PrinterSnapshot& snapshot) {
   if (snapshot.connection == PrinterConnectionState::kWaitingForCredentials) {
     return "setup";
   }
   if (snapshot.connection == PrinterConnectionState::kConnecting && !snapshot.wifi_connected) {
     return "syncing";
+  }
+  // Titlecased leftover stage "mqtt" must not beat the connecting copy.
+  if (snapshot.stage == "mqtt" ||
+      snapshot.detail.find("Connecting to local") != std::string::npos) {
+    return "connecting";
   }
   // Let filament ui_status (loading/unloading) take priority over has_error,
   // because Bambu sends user-prompt error codes during filament changes.
@@ -1438,10 +1474,6 @@ bool should_show_logo(const PrinterSnapshot& snapshot) {
   }
 }
 
-// Layer / print metrics only make sense once MQTT (or cloud) reports online.
-bool printer_link_ready(const PrinterSnapshot& snapshot) {
-  return snapshot.connection == PrinterConnectionState::kOnline;
-}
 
 #if defined(PRINTSPHERE_HW_VARIANT_KNOMI_V2)
 void apply_knomi_mdi_icon_scale(lv_obj_t* label) {
@@ -1460,8 +1492,7 @@ lv_obj_t* make_knomi_mdi_slot(lv_obj_t* parent) {
   lv_obj_set_style_clip_corner(slot, false, 0);
   lv_obj_clear_flag(slot, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_add_flag(slot, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
-  // Do not strip SCROLL_CHAIN: a swipe that starts on the icon must still
-  // reach the pager. OVERFLOW_VISIBLE already prevents clip of the scale.
+  pass_pager_swipe(slot);
   return slot;
 }
 #else
@@ -2232,12 +2263,15 @@ void Ui::apply_snapshot_locked(const PrinterSnapshot& snapshot, bool force_ring_
     }
     set_label_text_if_changed(detail_label_, detail);
   }
-  // AP / MQTT / portal messages sit higher and reclaim the Layer row until linked.
+  // Handshake copy sits in the layer band; the portal IP uses the remaining
+  // band so Connecting / Layer / Open IP cannot stack on the same pixels.
   {
-    const int detail_y = printer_link_ready(snapshot) ? kDetailY : kDetailSetupY;
+    const bool metrics_ready = printer_link_ready(snapshot);
+    const int detail_y = metrics_ready ? kDetailY : kDetailSetupY;
     lv_obj_align(detail_label_, LV_ALIGN_CENTER, 0, detail_y);
     if (portal_hint_label_ != nullptr) {
-      lv_obj_align(portal_hint_label_, LV_ALIGN_CENTER, 0, detail_y);
+      const int hint_y = metrics_ready ? kDetailY : kRemainingRowY;
+      lv_obj_align(portal_hint_label_, LV_ALIGN_CENTER, 0, hint_y);
     }
   }
 
@@ -3145,6 +3179,8 @@ esp_err_t Ui::build_dashboard() {
     lv_obj_set_size(page, board::kDisplayWidth, board::kDisplayHeight);
     make_transparent(page);
     lv_obj_clear_flag(page, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(page, LV_OBJ_FLAG_SCROLL_CHAIN_HOR);
+    enable_touch_bubble(page);
     return page;
   };
 
@@ -3228,6 +3264,7 @@ esp_err_t Ui::build_dashboard() {
   lv_obj_clear_flag(fixed_overlay_, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_clear_flag(fixed_overlay_, LV_OBJ_FLAG_SCROLLABLE);
   enable_touch_bubble(fixed_overlay_);
+  lv_obj_add_flag(fixed_overlay_, LV_OBJ_FLAG_SCROLL_CHAIN_HOR);
   lv_obj_move_foreground(fixed_overlay_);
 
   status_arc_ = lv_arc_create(fixed_overlay_);
@@ -3247,11 +3284,13 @@ esp_err_t Ui::build_dashboard() {
   lv_obj_set_style_opa(status_arc_, LV_OPA_TRANSP, LV_PART_KNOB);
   lv_obj_clear_flag(status_arc_, LV_OBJ_FLAG_SCROLLABLE);
   enable_touch_bubble(status_arc_);
+  lv_obj_add_flag(status_arc_, LV_OBJ_FLAG_SCROLL_CHAIN_HOR);
 
   progress_label_ = lv_label_create(lv_layer_top());
   set_label_text_if_changed(progress_label_, "--%");
   lv_obj_set_style_text_font(progress_label_, dosis40, 0);
   lv_obj_set_style_text_color(progress_label_, lv_color_hex(0xFFFFFF), 0);
+  pass_pager_swipe(progress_label_);
   lv_obj_align(progress_label_, LV_ALIGN_CENTER, 0, kProgressY);
   apply_display_rotation_visual_offset(progress_label_, display_rotation_);
   lv_obj_move_foreground(progress_label_);
@@ -3281,7 +3320,7 @@ esp_err_t Ui::build_dashboard() {
   make_transparent(badge_slot_);
   lv_obj_set_size(badge_slot_, kBadgeSize, kBadgeSize);
   lv_obj_align(badge_slot_, LV_ALIGN_CENTER, 0, kLogoY);
-  lv_obj_clear_flag(badge_slot_, LV_OBJ_FLAG_SCROLLABLE);
+  pass_pager_swipe(badge_slot_);
 
   logo_badge_ = lv_obj_create(badge_slot_);
   lv_obj_set_size(logo_badge_, kLogoBadgeSize, kLogoBadgeSize);
@@ -3291,8 +3330,7 @@ esp_err_t Ui::build_dashboard() {
   lv_obj_set_style_pad_all(logo_badge_, 0, 0);
   lv_obj_center(logo_badge_);
   lv_obj_clear_flag(logo_badge_, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_clear_flag(logo_badge_, LV_OBJ_FLAG_SCROLLABLE);
-  enable_touch_bubble(logo_badge_);
+  pass_pager_swipe(logo_badge_, true);
   lv_obj_add_event_cb(logo_badge_, &Ui::logo_event_cb, LV_EVENT_CLICKED, this);
 
   logo_image_ = lv_image_create(logo_badge_);
@@ -3301,13 +3339,13 @@ esp_err_t Ui::build_dashboard() {
   lv_image_set_antialias(logo_image_, true);
   lv_obj_set_style_image_recolor_opa(logo_image_, LV_OPA_TRANSP, 0);
   lv_obj_center(logo_image_);
-  lv_obj_clear_flag(logo_image_, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_clear_flag(logo_image_, LV_OBJ_FLAG_SCROLLABLE);
+  pass_pager_swipe(logo_image_);
 
   status_label_ = lv_label_create(page1_);
   set_label_text_if_changed(status_label_, "waiting...");
   lv_obj_set_style_text_font(status_label_, dosis32, 0);
   lv_obj_set_style_text_color(status_label_, lv_color_hex(0xFFFFFF), 0);
+  pass_pager_swipe(status_label_);
   lv_obj_align(status_label_, LV_ALIGN_CENTER, 0, kStatusY);
 
   detail_label_ = lv_label_create(page1_);
@@ -3317,6 +3355,7 @@ esp_err_t Ui::build_dashboard() {
   lv_obj_set_style_text_align(detail_label_, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_set_style_text_font(detail_label_, info20, 0);
   lv_obj_set_style_text_color(detail_label_, lv_color_hex(0x94A3B8), 0);
+  pass_pager_swipe(detail_label_);
   lv_obj_align(detail_label_, LV_ALIGN_CENTER, 0, kDetailY);
 
   layer_row_ = lv_obj_create(page1_);
@@ -3325,12 +3364,13 @@ esp_err_t Ui::build_dashboard() {
   lv_obj_set_flex_flow(layer_row_, LV_FLEX_FLOW_ROW);
   lv_obj_set_flex_align(layer_row_, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
                         LV_FLEX_ALIGN_CENTER);
-  lv_obj_clear_flag(layer_row_, LV_OBJ_FLAG_SCROLLABLE);
+  pass_pager_swipe(layer_row_);
 
   layer_label_ = lv_label_create(layer_row_);
   set_label_text_if_changed(layer_label_, "Layer: -- / --");
   lv_obj_set_style_text_font(layer_label_, dosis32, 0);
   lv_obj_set_style_text_color(layer_label_, lv_color_hex(0xDDDDDD), 0);
+  pass_pager_swipe(layer_label_);
 
   // Filament estimate (icon + grams) appears on the right of the layer row
   // when the cloud history exposes a slicer weight estimate. Both children
@@ -3368,6 +3408,7 @@ esp_err_t Ui::build_dashboard() {
     lv_obj_set_style_pad_all(row, 0, 0);
     lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(row, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
+    pass_pager_swipe(row);
     // Align after children are added — SIZE_CONTENT + early align pins y1 wrong.
     return row;
   };
@@ -3438,6 +3479,10 @@ esp_err_t Ui::build_dashboard() {
   lv_obj_align(bed_value_label_, LV_ALIGN_CENTER, kBedValueX, kTempY);
   set_label_text_if_changed(bed_value_label_, std::string("--") + kDegreeC);
 #endif
+  pass_pager_swipe(nozzle_prefix_label_);
+  pass_pager_swipe(nozzle_value_label_);
+  pass_pager_swipe(bed_prefix_label_);
+  pass_pager_swipe(bed_value_label_);
 
   nozzle_aux_label_ = lv_label_create(page1_);
   set_label_text_if_changed(nozzle_aux_label_, "");
@@ -3469,9 +3514,9 @@ esp_err_t Ui::build_dashboard() {
 #if defined(PRINTSPHERE_HW_VARIANT_KNOMI_V2)
   lv_obj_add_flag(remaining_row_, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
 #endif
-  // Tap to toggle between remaining duration and predicted finish time.
+  // Tap to toggle remaining duration vs predicted finish; swipe still pages.
+  pass_pager_swipe(remaining_row_, true);
   lv_obj_add_flag(remaining_row_, LV_OBJ_FLAG_CLICKABLE);
-  enable_touch_bubble(remaining_row_);
   lv_obj_add_event_cb(remaining_row_, &Ui::remaining_row_event_cb, LV_EVENT_CLICKED, this);
 
 #if defined(PRINTSPHERE_HW_VARIANT_KNOMI_V2)
@@ -3495,6 +3540,7 @@ esp_err_t Ui::build_dashboard() {
   set_label_text_if_changed(remaining_label_, "--m");
   lv_obj_set_style_text_font(remaining_label_, dosis40, 0);
   lv_obj_set_style_text_color(remaining_label_, lv_color_hex(0x87CEEB), 0);
+  pass_pager_swipe(remaining_label_);
 #if defined(PRINTSPHERE_HW_VARIANT_KNOMI_V2)
   lv_obj_set_height(remaining_label_, kMdiIconSlotH);
   lv_obj_set_style_pad_top(remaining_label_, kMdiValuePadTop, 0);
@@ -3510,6 +3556,7 @@ esp_err_t Ui::build_dashboard() {
   lv_obj_set_style_text_align(portal_hint_label_, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_set_style_text_font(portal_hint_label_, info20, 0);
   lv_obj_set_style_text_color(portal_hint_label_, lv_color_hex(0x64748B), 0);
+  pass_pager_swipe(portal_hint_label_);
   lv_obj_align(portal_hint_label_, LV_ALIGN_CENTER, 0, kDetailY);
   lv_obj_add_flag(portal_hint_label_, LV_OBJ_FLAG_HIDDEN);
 
@@ -3714,10 +3761,13 @@ void Ui::apply_page_visibility() {
   const bool show_battery_overlay =
       (last_snapshot_.battery_present || last_snapshot_.charging) &&
       (settled_page1 || (!scrolling_ && active_page_ == kPageIdxCamera));
+  const bool metrics_ready = printer_link_ready(last_snapshot_);
+  const bool handshake = !metrics_ready;
   const bool portal_hint_has_priority = portal_pin_active_ || portal_session_active_;
+  // During handshake keep Connecting + portal IP; they sit on different Y bands.
   const bool show_portal_hint =
       settled_page1 && !portal_hint_text_.empty() &&
-      (portal_hint_has_priority || !detail_visible_);
+      (handshake || portal_hint_has_priority || !detail_visible_);
 
   for (int u = 0; u < kMaxAmsUnits; ++u) {
     if (ams_pages_[u] != nullptr) {
@@ -3727,8 +3777,8 @@ void Ui::apply_page_visibility() {
   set_hidden(page2_, !preview_page_available_);
   set_hidden(page3_, !camera_page_available_);
   set_hidden(status_label_, !on_page1);
-  set_hidden(detail_label_, !on_page1 || !detail_visible_ || show_portal_hint);
-  set_hidden(layer_row_, !on_page1 || !printer_link_ready(last_snapshot_));
+  set_hidden(detail_label_, !on_page1 || !detail_visible_ || (show_portal_hint && metrics_ready));
+  set_hidden(layer_row_, !on_page1 || !metrics_ready);
 #if defined(PRINTSPHERE_HW_VARIANT_KNOMI_V2)
   set_hidden(battery_icon_label_, true);
   set_hidden(battery_pct_label_, true);
@@ -3744,7 +3794,7 @@ void Ui::apply_page_visibility() {
   set_hidden(nozzle_value_label_, !on_page1);
   set_hidden(bed_prefix_label_, !on_page1);
   set_hidden(bed_value_label_, !on_page1);
-  set_hidden(remaining_row_, !on_page1);
+  set_hidden(remaining_row_, !on_page1 || !metrics_ready);
   set_hidden(badge_slot_, !on_page1);
   set_hidden(portal_hint_label_, !show_portal_hint);
   set_hidden(page2_image_, !on_page2 || !preview_image_visible_);
@@ -4227,13 +4277,17 @@ void Ui::handle_screen_event(lv_event_t* event) {
 
 void Ui::update_portal_access_visuals_locked() {
   const bool show_page1 = !scrolling_ && active_page_ == kPageIdxMain;
+  const bool handshake = !printer_link_ready(last_snapshot_);
   const bool portal_hint_has_priority = portal_pin_active_ || portal_session_active_;
   const bool show_hint = portal_hint_label_ != nullptr && show_page1 && !portal_hint_text_.empty() &&
-                         (portal_hint_has_priority || !detail_visible_);
+                         (handshake || portal_hint_has_priority || !detail_visible_);
   set_hidden(portal_hint_label_, !show_hint);
   if (show_hint) {
     set_label_text_if_changed(portal_hint_label_, portal_hint_text_);
-    set_hidden(detail_label_, true);
+    // Handshake: Connecting stays visible; IP sits on the remaining-time band.
+    if (!handshake) {
+      set_hidden(detail_label_, true);
+    }
   } else if (detail_label_ != nullptr && show_page1 && detail_visible_) {
     set_hidden(detail_label_, false);
   }

@@ -17,6 +17,12 @@ lv_obj_t* find_text(lv_obj_t* object, const char* text) {
     if (auto* found = find_text(lv_obj_get_child(object, i), text)) return found;
   return nullptr;
 }
+bool is_hidden_in_tree(lv_obj_t* object) {
+  for (lv_obj_t* current = object; current != nullptr; current = lv_obj_get_parent(current)) {
+    if (lv_obj_has_flag(current, LV_OBJ_FLAG_HIDDEN)) return true;
+  }
+  return false;
+}
 lv_obj_t* find_pager(lv_obj_t* object) {
   if (lv_obj_has_flag(object, LV_OBJ_FLAG_SCROLLABLE) && lv_obj_get_scroll_dir(object) == LV_DIR_HOR) return object;
   for (uint32_t i=0; i<lv_obj_get_child_count(object); ++i)
@@ -139,6 +145,30 @@ int main() {
   concurrent_producer.join();
   pump(60);
   assert(find_text(lv_layer_top(),"77%") && !ui.has_pending_snapshot());
+
+  // Handshake copy (hybrid cloud-online + local MQTT connecting) must not share
+  // the layer / remaining band, and "Mqtt" must render as "connecting".
+  PrinterSnapshot handshake;
+  handshake.connection = PrinterConnectionState::kOnline;
+  handshake.wifi_connected = true;
+  handshake.wifi_ip = "192.168.178.62";
+  handshake.stage = "mqtt";
+  handshake.detail = "Connecting to local Bambu MQTT";
+  handshake.ui_status = "Mqtt";
+  handshake.preview_page_available = false;
+  handshake.camera_page_available = false;
+  ui.apply_snapshot(handshake);
+  pump(100);
+  auto* connecting = find_text(screen, "Connecting to local Bambu MQTT");
+  assert(connecting && !is_hidden_in_tree(connecting));
+  assert(find_text(screen, "connecting") && !is_hidden_in_tree(find_text(screen, "connecting")));
+  auto* mqtt_status = find_text(screen, "Mqtt");
+  assert(!mqtt_status || is_hidden_in_tree(mqtt_status));
+  auto* layer = find_text(screen, "Layer: -- / --");
+  assert(layer && is_hidden_in_tree(layer));
+  auto* remaining = find_text(screen, "--m");
+  assert(!remaining || is_hidden_in_tree(remaining));
+
   pump(5100);
   auto performance = ui.performance_snapshot();
   assert(performance && performance->window_ms >= 5000);

@@ -1,20 +1,20 @@
 {
-  "version": "v1.7.10",
+  "version": "v1.7.11",
   "project": "printsphere_knomi_v2_p2",
   "idf": "v5.5.4",
   "board": "knomi_v2",
   "idf_required": "5.5.4",
-  "package_version": "v1.7.10-knomi_v2",
-  "git_commit": "b6e3189074ad1f291641e7f141d84fe686c9d90c",
-  "source_tree_sha256": "fd7a9585ad25addf3254b86034e0639eab3781e02ee1259f733c847ba36da98b",
+  "package_version": "v1.7.11-knomi_v2",
+  "git_commit": "21d2a0d922f89489f5a252adcb731e067c0fcb40",
+  "source_tree_sha256": "b56f5da4cb3b7528afb86696718036ad2ff6e48124e42dd7d79e221cc318093d",
   "dependencies_lock_sha256": "382ccd75d33a35dfa040b940fea27ee7c181a93d71f2fa8f3316d1be76f21b2b",
   "sdkconfig_sha256": "74899347914e7a019077dfd555069ecde83a4073e0b981db9e7096994c08ccde",
   "ota": {
-    "bytes": 3143536,
-    "sha256": "c18d4186a21ee3e0c1d746f758e1c10ea2ab46423004e160b93d5c67078d313f"
+    "bytes": 3144128,
+    "sha256": "99eb6db69e25fa448da9c05acf75250030ba2d4a0e7fdcced15077a918a87f87"
   },
   "initial": {
-    "bytes": 4257648,
-    "sha256": "fdbc75bdaf100a76519d56cecf908e1b1dbad0393e7e1549997fb949f3b80310"
+    "bytes": 4258240,
+    "sha256": "9a57e8f8aa55a06372cbcff538a70ff23a22a5cf21f1f431a0293a7e2d82cb20"
   }
 }
