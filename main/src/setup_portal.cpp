@@ -2274,7 +2274,8 @@ esp_err_t SetupPortal::handle_root(httpd_req_t* request) {
     html += json_escape(kPortalReleaseVersion);
     html += "</p>";
     html += "<div class=\"actions\"><button type=\"button\" class=\"secondary\" id=\"ota-check-button\">Check for update</button>";
-    html += "<button type=\"button\" class=\"primary\" id=\"ota-install-button\" disabled>Install update</button></div>";
+    html += "<button type=\"button\" class=\"primary\" id=\"ota-install-button\" disabled>Install update</button>";
+    html += "<button type=\"button\" class=\"secondary\" id=\"ota-reinstall-button\" disabled>Reinstall</button></div>";
     html += "<div class=\"micro\" id=\"ota-gh-status\">The portal checks GitHub for a newer release after Wi-Fi and network time are ready.</div>";
     html += "<hr style=\"border:none;border-top:1px solid var(--line);margin:16px 0 4px\">";
     html += "<div class=\"field\"><label for=\"ota_file\">Firmware .bin file</label>";
@@ -2415,9 +2416,11 @@ esp_err_t SetupPortal::handle_root(httpd_req_t* request) {
           "const pill=document.getElementById('ota-section-pill');"
           "const info=document.getElementById('ota-version-info');"
           "const install=document.getElementById('ota-install-button');"
+          "const reinstall=document.getElementById('ota-reinstall-button');"
           "const status=document.getElementById('ota-gh-status');"
           "if(upd.url)otaDownloadUrl=upd.url;"
           "if(info){info.textContent='Current: '+(upd.current||'')+' \\u00b7 Latest: '+(upd.latest||'\\u2014');}"
+          "if(reinstall)reinstall.disabled=!otaDownloadUrl;"
           "if(upd.available&&upd.latest){"
           "if(hero){hero.hidden=false;hero.textContent='Update '+upd.latest;}"
           "if(pill){pill.textContent='Update';pill.className='summary-pill warn';}"
@@ -2428,7 +2431,7 @@ esp_err_t SetupPortal::handle_root(httpd_req_t* request) {
           "if(pill){pill.textContent='OTA';pill.className='summary-pill idle';}"
           "if(install)install.disabled=true;"
           "if(status&&upd.checking)status.textContent='Checking GitHub for a newer release...';"
-          "else if(status&&upd.checked)status.textContent=upd.error?('GitHub check: '+upd.error):'Firmware is up to date.';"
+          "else if(status&&upd.checked)status.textContent=upd.error?('GitHub check: '+upd.error):(otaDownloadUrl?'Firmware is up to date. Reinstall flashes the same GitHub release.':'Firmware is up to date.');"
           "}}";
   html += "const heroUpdate=document.getElementById('heroUpdate');"
           "if(heroUpdate){heroUpdate.addEventListener('click',function(ev){ev.preventDefault();"
@@ -3054,7 +3057,13 @@ esp_err_t SetupPortal::handle_root(httpd_req_t* request) {
   html += "(function(){";
   html += "var otaCheckBtn=document.getElementById('ota-check-button');";
   html += "var otaInstallBtn=document.getElementById('ota-install-button');";
+  html += "var otaReinstallBtn=document.getElementById('ota-reinstall-button');";
   html += "var otaGhStatus=document.getElementById('ota-gh-status');";
+  html += "function startGithubInstall(reinstall){"
+          "if(!otaDownloadUrl){if(otaGhStatus)otaGhStatus.textContent='No GitHub firmware URL yet.';return;}"
+          "if(otaGhStatus)otaGhStatus.textContent=reinstall?'Reinstalling the current GitHub release...':'Installing update...';"
+          "var urlInput=document.getElementById('ota_url');if(urlInput)urlInput.value=otaDownloadUrl;"
+          "var urlBtn=document.getElementById('ota-url-button');if(urlBtn)urlBtn.click();}";
   html += "function pollGithubCheck(remaining){"
           "fetch('/api/update/check',{cache:'no-store'})"
           ".then(function(r){return r.json();})"
@@ -3066,10 +3075,8 @@ esp_err_t SetupPortal::handle_root(httpd_req_t* request) {
           "otaCheckBtn.disabled=true;if(otaGhStatus)otaGhStatus.textContent='Checking GitHub for a newer release...';"
           "fetch('/api/update/check?refresh=1',{cache:'no-store'}).then(function(){pollGithubCheck(25);})"
           ".catch(function(){if(otaGhStatus)otaGhStatus.textContent='GitHub check failed.';otaCheckBtn.disabled=false;});});}";
-  html += "if(otaInstallBtn){otaInstallBtn.addEventListener('click',function(){"
-          "if(!otaDownloadUrl){if(otaGhStatus)otaGhStatus.textContent='No GitHub firmware URL yet.';return;}"
-          "var urlInput=document.getElementById('ota_url');if(urlInput)urlInput.value=otaDownloadUrl;"
-          "var urlBtn=document.getElementById('ota-url-button');if(urlBtn)urlBtn.click();});}";
+  html += "if(otaInstallBtn){otaInstallBtn.addEventListener('click',function(){startGithubInstall(false);});}";
+  html += "if(otaReinstallBtn){otaReinstallBtn.addEventListener('click',function(){startGithubInstall(true);});}";
   html += "var otaFile=document.getElementById('ota_file');";
   html += "var otaBtn=document.getElementById('ota-upload-button');";
   html += "var otaStatus=document.getElementById('ota-status');";
