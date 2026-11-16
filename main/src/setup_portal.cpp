@@ -12,7 +12,9 @@
 #include "cJSON.h"
 #include "esp_check.h"
 #include "esp_crt_bundle.h"
+#include "esp_http_client.h"
 #include "esp_https_ota.h"
+#include "strings.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
@@ -93,6 +95,89 @@ std::string json_escape(const std::string& input) {
   }
 
   return output;
+}
+
+constexpr int kOtaHttpBufferBytes = 4096;
+constexpr int kOtaHttpTimeoutMs = 60000;
+constexpr char kOtaUserAgent[] = "PrintSphere/" PRINTSPHERE_RELEASE_VERSION;
+
+esp_err_t capture_location_event(esp_http_client_event_t* event) {
+  if (event->event_id != HTTP_EVENT_ON_HEADER || event->user_data == nullptr) return ESP_OK;
+  if (event->header_key != nullptr && strcasecmp(event->header_key, "Location") == 0 &&
+      event->header_value != nullptr) {
+    static_cast<std::string*>(event->user_data)->assign(event->header_value);
+  }
+  return ESP_OK;
+}
+
+esp_err_t ota_http_init_cb(esp_http_client_handle_t client) {
+  esp_http_client_set_header(client, "User-Agent", kOtaUserAgent);
+  esp_http_client_set_header(client, "Accept", "application/octet-stream");
+  return ESP_OK;
+}
+
+void apply_ota_http_defaults(esp_http_client_config_t* config, const char* url) {
+  *config = {};
+  config->url = url;
+  config->crt_bundle_attach = esp_crt_bundle_attach;
+  config->timeout_ms = kOtaHttpTimeoutMs;
+  config->buffer_size = kOtaHttpBufferBytes;
+  config->buffer_size_tx = kOtaHttpBufferBytes;
+  config->keep_alive_enable = false;
+  config->user_agent = kOtaUserAgent;
+}
+
+// GitHub release assets 302 to a long signed CDN URL. The default 512-byte HTTP
+// buffer truncates Location and the follow-up GET, which surfaces as ESP_FAIL.
+bool follow_https_redirects(std::string url, std::string* final_url, std::string* error) {
+  for (int hop = 0; hop < 8; ++hop) {
+    std::string location;
+    esp_http_client_config_t config = {};
+    apply_ota_http_defaults(&config, url.c_str());
+    config.disable_auto_redirect = true;
+    config.event_handler = &capture_location_event;
+    config.user_data = &location;
+
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (client == nullptr) {
+      *error = "http-begin";
+      return false;
+    }
+    esp_http_client_set_method(client, HTTP_METHOD_GET);
+    ota_http_init_cb(client);
+    const esp_err_t open_err = esp_http_client_open(client, 0);
+    if (open_err != ESP_OK) {
+      *error = std::string("connect: ") + esp_err_to_name(open_err);
+      esp_http_client_cleanup(client);
+      return false;
+    }
+    esp_http_client_fetch_headers(client);
+    const int status = esp_http_client_get_status_code(client);
+    esp_http_client_close(client);
+    esp_http_client_cleanup(client);
+
+    if (status >= 200 && status < 300) {
+      *final_url = std::move(url);
+      return true;
+    }
+    if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
+      if (location.empty()) {
+        *error = "HTTP " + std::to_string(status) + " without Location";
+        return false;
+      }
+      if (location.rfind("https://", 0) != 0) {
+        *error = "HTTP " + std::to_string(status) + " to a non-HTTPS URL";
+        return false;
+      }
+      ESP_LOGI(kTag, "OTA redirect %d -> %s", status, location.c_str());
+      url = std::move(location);
+      continue;
+    }
+    *error = "HTTP " + std::to_string(status);
+    return false;
+  }
+  *error = "too many redirects";
+  return false;
 }
 
 std::string read_string_field(const cJSON* object, const char* key) {
@@ -4942,7 +5027,7 @@ esp_err_t SetupPortal::handle_ota_url(httpd_req_t* request) {
   }
 
   ESP_LOGI(kTag, "Starting OTA URL task: %s", url.c_str());
-  if (xTaskCreate(&SetupPortal::ota_url_task, "ota_url", 8192, portal, 5, nullptr) != pdPASS) {
+  if (xTaskCreate(&SetupPortal::ota_url_task, "ota_url", 12288, portal, 5, nullptr) != pdPASS) {
     portal->ota_in_progress_ = false;
     std::lock_guard<std::mutex> lock(portal->ota_url_mutex_);
     portal->ota_url_status_.state = OtaUrlState::kFailed;
@@ -5040,14 +5125,27 @@ void SetupPortal::ota_url_task(void* context) {
 
   ESP_LOGI(kTag, "OTA URL task: %s", url.c_str());
 
+  std::string resolved = url;
+  std::string resolve_error;
+  if (!follow_https_redirects(url, &resolved, &resolve_error)) {
+    ESP_LOGE(kTag, "OTA URL resolve failed: %s", resolve_error.c_str());
+    {
+      std::lock_guard<std::mutex> lock(portal->ota_url_mutex_);
+      portal->ota_url_status_.state = OtaUrlState::kFailed;
+      portal->ota_url_status_.error = resolve_error;
+    }
+    portal->ota_in_progress_ = false;
+    lease.keep_until_reboot();
+    return;
+  }
+  ESP_LOGI(kTag, "OTA URL resolved: %s", resolved.c_str());
+
   esp_http_client_config_t http_cfg = {};
-  http_cfg.url = url.c_str();
-  http_cfg.crt_bundle_attach = esp_crt_bundle_attach;
-  http_cfg.timeout_ms = 30000;
-  http_cfg.keep_alive_enable = true;
+  apply_ota_http_defaults(&http_cfg, resolved.c_str());
 
   esp_https_ota_config_t ota_cfg = {};
   ota_cfg.http_config = &http_cfg;
+  ota_cfg.http_client_init_cb = &ota_http_init_cb;
 
   esp_https_ota_handle_t ota_handle = nullptr;
   esp_err_t err = esp_https_ota_begin(&ota_cfg, &ota_handle);
