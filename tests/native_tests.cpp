@@ -5,6 +5,7 @@
 #include <thread>
 #include "printsphere/bambu_protocol.hpp"
 #include "printsphere/command_tracker.hpp"
+#include "printsphere/github_update.hpp"
 
 using namespace printsphere;
 struct Json {
@@ -48,6 +49,18 @@ int main() {
   assert(!policy::firmware_compatible("printsphere_2_8c_p2", "printsphere_2_8c_p2", 2, 1));
   assert(policy::firmware_compatible("printsphere_knomi_v2_p2", "printsphere_knomi_v2_p2", 1, 1));
   assert(!policy::firmware_compatible("printsphere_1_75_p2", "printsphere_knomi_v2_p2", 1, 1));
+  using printsphere::github::parse_semver;
+  using printsphere::github::compare_semver;
+  using printsphere::github::ota_asset_matches;
+  assert(parse_semver("v1.7.5").valid);
+  assert(compare_semver(parse_semver("v1.7.6"), parse_semver("v1.7.5-knomi_v2")) > 0);
+  assert(compare_semver(parse_semver("v1.7.5-knomi_v2"), parse_semver("v1.7.5")) == 0);
+  assert(!parse_semver("dev").valid);
+  assert(ota_asset_matches("printsphere_ota-v1.7.5-knomi_v2.bin", "knomi_v2"));
+  assert(!ota_asset_matches("printsphere_full-v1.7.5-knomi_v2.bin", "knomi_v2"));
+  assert(!ota_asset_matches("printsphere_ota.bin", "knomi_v2"));
+  assert(ota_asset_matches("printsphere_ota.bin", ""));
+  assert(!ota_asset_matches("printsphere_ota-v1.7.5-knomi_v2.bin", ""));
 
   Json delta(R"({"id":0,"state":1})");
   Json empty(R"({"id":0,"tray_type":""})");
