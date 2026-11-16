@@ -17,6 +17,8 @@ Relative to upstream PrintSphere, this tree adds or extends:
 - Display rotation via GC9A01 MADCTL (SPI / `OTHER` panel path)
 - HMS / error-lookup fix for UTF-8 BOM in the embedded TSV
 - Packaging and flash paths for the `knomi_v2` release variant
+- Merge of upstream v1.7.5 cloud/config robustness, with a dedicated Knomi
+  firmware identity (`printsphere_knomi_v2_p2`)
 
 Unmodified upstream behavior for Waveshare AMOLED 1.75 and LCD 2.8C is intended to remain available via the existing `PRINTSPHERE_HW_VARIANT` builds.
 
